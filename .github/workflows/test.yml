@@ -1,0 +1,64 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.arch }}), Swift ${{ matrix.swift }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86-64, runner: ubuntu-latest, swift: "6.2" }
+          - { arch: ARM64, runner: ubuntu-24.04-arm, swift: "6.2" }
+          # The oldest Swift that the package supports (swift-tools-version).
+          - { arch: x86-64, runner: ubuntu-latest, swift: "6.0" }
+    runs-on: ${{ matrix.runner }}
+    container: swift:${{ matrix.swift }}-noble
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift test
+      # libvsql is compiled without -fwrapv (see Sources/CVSQL/vsql.c), so the
+      # tests also run with optimizations.
+      - run: swift test -c release
+      - run: swift run Example
+
+  macos:
+    name: macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86-64, runner: macos-15-intel }
+          - { arch: ARM64, runner: macos-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - run: swift test
+      - run: swift test -c release
+      - run: swift run Example
+
+  windows:
+    name: Windows (x86-64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          branch: swift-6.2-release
+          tag: 6.2-RELEASE
+      - run: swift test
+      - run: swift test -c release
+      - run: swift run Example
+
+  lint:
+    name: Format
+    runs-on: ubuntu-latest
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift format lint --strict -r Sources/VSQL Sources/Example Tests Package.swift
