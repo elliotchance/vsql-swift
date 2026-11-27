@@ -9,9 +9,15 @@ final class TempPath: Sendable {
     let path: String
 
     init() {
-        path =
-            FileManager.default.temporaryDirectory
-            .appendingPathComponent("vsql-swift-test-\(UUID().uuidString).vsql").path
+        // libvsql doesn't open a path that's longer than 128 bytes, and the
+        // temporary folder of an app in the iOS Simulator is longer than that
+        // already, so the tests use /tmp of the Mac instead.
+        #if targetEnvironment(simulator)
+            let folder = URL(fileURLWithPath: "/tmp")
+        #else
+            let folder = FileManager.default.temporaryDirectory
+        #endif
+        path = folder.appendingPathComponent("vsql-swift-test-\(UUID().uuidString).vsql").path
     }
 
     deinit {

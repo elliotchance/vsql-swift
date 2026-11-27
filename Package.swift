@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "vsql-swift",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v13), .iOS(.v16)],
     products: [
         .library(name: "VSQL", targets: ["VSQL"])
     ],
@@ -16,7 +16,11 @@ let package = Package(
         // (such as -w).
         .target(
             name: "CVSQL",
-            exclude: ["amalgamation"],
+            exclude: ["amalgamation", "ios/README.md"],
+            cSettings: [
+                // Headers that the iOS SDK doesn't have (see ios/README.md).
+                .headerSearchPath("ios", .when(platforms: [.iOS]))
+            ],
             linkerSettings: [
                 // The libraries that V used to link libvsql (LIBVSQL_FLAGS in
                 // the amalgamation's vsql.mk).
