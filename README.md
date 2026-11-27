@@ -194,6 +194,22 @@ x86-64) or Windows (x86-64). iOS and the other Apple platforms aren't
 supported yet. The first build compiles libvsql, which takes about 15 seconds
 (or a couple of minutes with optimizations).
 
+## Testing
+
+```sh
+swift test
+```
+
+The tests cover every line of `Sources/VSQL`, which CI checks with:
+
+```sh
+swift test --enable-code-coverage
+swift scripts/check-coverage.swift "$(swift test --show-codecov-path)"
+```
+
+It lists the lines that aren't covered. Code that a test can't reach should be
+restructured (or removed) rather than left out.
+
 ## Updating vsql
 
 `Sources/CVSQL` has the libvsql C from a vsql release

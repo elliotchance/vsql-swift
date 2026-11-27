@@ -39,7 +39,7 @@ private func conversionError(
         type, .init(codingPath: codingPath, debugDescription: "\(error)", underlyingError: error))
 }
 
-private struct IndexKey: CodingKey {
+struct IndexKey: CodingKey {
     var intValue: Int?
     var stringValue: String
 

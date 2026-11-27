@@ -430,9 +430,12 @@ extension Value {
         }
     }
 
-    /// The value of a column that's read as a string.
-    static func parse(_ s: String, _ type: SQLType) throws -> Value {
-        let invalid = ConversionError.invalidValue("invalid \(type): \(s)")
+    /// The value of a column (starting at 0) that's read as a string.
+    static func parse(_ s: String, column: Column, index: Int) throws -> Value {
+        let type = column.type
+        let invalid = VSQLError.conversionFailed(
+            column: index, name: column.name, type: type,
+            reason: .invalidValue("invalid \(type): \(s)"))
         switch type {
         case .boolean:
             switch s {
