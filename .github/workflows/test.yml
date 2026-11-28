@@ -61,4 +61,14 @@ jobs:
     container: swift:6.2-noble
     steps:
       - uses: actions/checkout@v7
-      - run: swift format lint --strict -r Sources/VSQL Sources/Example Tests Package.swift
+      - run: swift format lint --strict -r Sources/VSQL Sources/Example Tests Package.swift scripts
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift test --enable-code-coverage
+      # Every line of Sources/VSQL is covered by the tests.
+      - run: swift scripts/check-coverage.swift "$(swift test --show-codecov-path)"

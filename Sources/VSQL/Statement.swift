@@ -265,15 +265,8 @@ public final class Rows {
                 case .real: value = try getFloat(stmt, n).map { .double(Double($0)) }
                 case .binary: value = try getBinary(stmt, n).map(Value.binary)
                 case .text:
-                    if let s = try getString(stmt, n, &buffer) {
-                        do {
-                            value = try Value.parse(s, column.type)
-                        } catch let error as ConversionError {
-                            throw VSQLError.conversionFailed(
-                                column: i, name: column.name, type: column.type, reason: error)
-                        }
-                    } else {
-                        value = nil
+                    value = try getString(stmt, n, &buffer).map {
+                        try Value.parse($0, column: column, index: i)
                     }
                 }
                 values.append(value ?? .null)

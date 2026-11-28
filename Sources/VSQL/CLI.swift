@@ -4,7 +4,6 @@
 // handle.
 
 import CVSQL
-import Foundation
 
 // The constants of libvsql.h, with the types that the routines take (Swift
 // imports a macro as the type of its literal).
@@ -43,29 +42,27 @@ private func check(_ rc: SQLRETURN, _ handleType: SQLSMALLINT, _ handle: SQLINTE
 private func readString(
     capacity: Int, _ read: (UnsafeMutablePointer<SQLCHAR>, SQLSMALLINT) -> Int?
 ) -> String? {
-    var capacity = capacity
-    while true {
-        var buffer = [SQLCHAR](repeating: 0, count: capacity)
-        let length = buffer.withUnsafeMutableBufferPointer {
-            read($0.baseAddress!, SQLSMALLINT(clamping: $0.count))
-        }
-        guard let length else {
+    var buffer: [SQLCHAR] = []
+    var length = capacity - 1
+    // The string was truncated (or hasn't been read yet).
+    while length >= buffer.count {
+        buffer = [SQLCHAR](repeating: 0, count: length + 1)
+        guard
+            let n = buffer.withUnsafeMutableBufferPointer({
+                read($0.baseAddress!, SQLSMALLINT(clamping: $0.count))
+            })
+        else {
             return nil
         }
-
-        // The string was truncated.
-        if length >= capacity {
-            capacity = length + 1
-            continue
-        }
-
-        return String(decoding: buffer[..<max(length, 0)], as: UTF8.self)
+        length = max(n, 0)
     }
+
+    return String(decoding: buffer[..<length], as: UTF8.self)
 }
 
 /// A string field of the first diagnostic record, which is nil if it's empty
 /// (or can't be read).
-private func diagnosticField(
+func diagnosticField(
     _ handleType: SQLSMALLINT, _ handle: SQLINTEGER, _ field: Int32
 ) -> String? {
     let value = readString(capacity: 129) { buffer, size in
@@ -82,7 +79,7 @@ private func diagnosticField(
 }
 
 /// The first diagnostic record of the last routine called with a handle.
-private func diagnostics(_ handleType: SQLSMALLINT, _ handle: SQLINTEGER) -> SQLError {
+func diagnostics(_ handleType: SQLSMALLINT, _ handle: SQLINTEGER) -> SQLError {
     vsql_swift_prepare_thread()
     var sqlstate = [SQLCHAR](repeating: 0, count: 6)
     let message = readString(capacity: 512) { buffer, size in
@@ -140,9 +137,7 @@ func allocEnv() throws -> SQLHENV {
     vsql_swift_prepare_thread()
     _ = initialized
     var env: SQLHENV = 0
-    guard SQLAllocHandle(CLI.handleEnv, CLI.nullHandle, &env) == CLI.success else {
-        throw SQLError(sqlstate: "HY001", message: "can't allocate an environment")
-    }
+    try check(SQLAllocHandle(CLI.handleEnv, CLI.nullHandle, &env), CLI.handleEnv, env)
     return env
 }
 
@@ -209,25 +204,22 @@ func setAutocommitOn(_ dbc: SQLHDBC) throws {
 /// Reads a string from SQLGetInfo.
 func getInfo(_ dbc: SQLHDBC, _ infoType: Int32) throws -> String {
     vsql_swift_prepare_thread()
-    var error: SQLError?
+    var error: Error?
     let value = readString(capacity: 64) { buffer, size in
         var length: SQLSMALLINT = 0
         do {
             try check(
                 SQLGetInfo(dbc, SQLSMALLINT(infoType), buffer, size, &length),
                 CLI.handleDbc, dbc)
-        } catch let e as SQLError {
+        } catch let e {
             error = e
-            return nil
-        } catch {
-            return nil
         }
-        return max(Int(length), 0)
+        return Int(length)
     }
     if let error {
         throw error
     }
-    return value ?? ""
+    return value!
 }
 
 func startTran(_ dbc: SQLHDBC, accessMode: Int, isolationLevel: Int) throws {
@@ -417,14 +409,13 @@ func describeCol(_ stmt: SQLHSTMT, _ n: Int) throws -> ColumnDescription {
                 CLI.handleStmt, stmt)
         } catch let e {
             error = e
-            return nil
         }
-        return max(Int(length), 0)
+        return Int(length)
     }
     if let error {
         throw error
     }
-    d.name = name ?? ""
+    d.name = name!
     return d
 }
 
@@ -483,10 +474,21 @@ func getString(_ stmt: SQLHSTMT, _ n: Int, _ buffer: inout [UInt8]) throws -> St
         buffer = [UInt8](repeating: 0, count: 256)
     }
     var s: [UInt8] = []
-    while true {
+    var rest = 0
+    var rc = CLI.successWithInfo
+    var size = 0
+    // The rest of the string didn't fit (or hasn't been read yet), so the
+    // buffer has a null terminated piece of it, and it grows to the size of
+    // the rest.
+    while rc == CLI.successWithInfo && rest >= size {
+        if size > 0 {
+            let piece = buffer[..<size].firstIndex(of: 0)!
+            s.append(contentsOf: buffer[..<piece])
+            buffer = [UInt8](repeating: 0, count: rest - piece + 1)
+        }
         var indicator: SQLINTEGER = 0
-        let size = min(buffer.count, Int(SQLINTEGER.max))
-        let rc = buffer.withUnsafeMutableBytes {
+        size = min(buffer.count, Int(SQLINTEGER.max))
+        rc = buffer.withUnsafeMutableBytes {
             SQLGetData(
                 stmt, number, SQLSMALLINT(SQL_CHAR), $0.baseAddress, SQLINTEGER(size),
                 &indicator)
@@ -495,23 +497,12 @@ func getString(_ stmt: SQLHSTMT, _ n: Int, _ buffer: inout [UInt8]) throws -> St
         if indicator == CLI.nullData {
             return nil
         }
-
-        // The rest of the string (indicator) didn't fit, so the buffer has a
-        // null terminated piece of it, and it grows to the size of the rest.
-        let rest = Int(indicator)
-        if rc == CLI.successWithInfo && rest >= size {
-            let piece = buffer[..<size].firstIndex(of: 0) ?? size
-            s.append(contentsOf: buffer[..<piece])
-            buffer = [UInt8](repeating: 0, count: rest - piece + 1)
-            continue
-        }
-
-        s.append(contentsOf: buffer[..<rest])
-        guard let string = String(bytes: s, encoding: .utf8) else {
-            throw SQLError(sqlstate: "22021", message: "a string isn't valid UTF-8")
-        }
-        return string
+        rest = Int(indicator)
     }
+
+    // vsql's strings are UTF-8.
+    s.append(contentsOf: buffer[..<rest])
+    return String(decoding: s, as: UTF8.self)
 }
 
 /// Reads a binary string column (starting at 1) of the fetched row, it's nil
@@ -521,11 +512,20 @@ func getBinary(_ stmt: SQLHSTMT, _ n: Int) throws -> [UInt8]? {
     let number: SQLSMALLINT = try length(n, "column list")
     var value: [UInt8] = []
     var size = 256
-    while true {
-        let start = value.count
+    var start = 0
+    var rest = size + 1
+    var rc = CLI.successWithInfo
+    // The rest of the value didn't fit (or hasn't been read yet), so the
+    // buffer is full (there isn't a null terminator), and the next piece is
+    // the rest of it.
+    while rc == CLI.successWithInfo && rest > size {
+        if !value.isEmpty {
+            size = rest - size
+        }
+        start = value.count
         value.append(contentsOf: repeatElement(0, count: size))
         var indicator: SQLINTEGER = 0
-        let rc = value.withUnsafeMutableBytes {
+        rc = value.withUnsafeMutableBytes {
             SQLGetData(
                 stmt, number, SQLSMALLINT(SQL_VARBINARY), $0.baseAddress! + start,
                 SQLINTEGER(size), &indicator)
@@ -534,17 +534,9 @@ func getBinary(_ stmt: SQLHSTMT, _ n: Int) throws -> [UInt8]? {
         if indicator == CLI.nullData {
             return nil
         }
-
-        // The rest of the value (indicator) didn't fit, so the buffer is full
-        // (there isn't a null terminator), and the next piece is the rest of
-        // it.
-        let rest = Int(indicator)
-        if rc == CLI.successWithInfo && rest > size {
-            size = rest - size
-            continue
-        }
-
-        value.removeLast(value.count - (start + rest))
-        return value
+        rest = Int(indicator)
     }
+
+    value.removeLast(value.count - (start + rest))
+    return value
 }

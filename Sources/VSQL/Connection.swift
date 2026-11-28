@@ -27,8 +27,8 @@ import Foundation
 /// The connection is closed when it's no longer used (or by ``close()``),
 /// which rolls back a transaction that hasn't been committed.
 public final class Connection {
-    private var env: SQLHENV
-    private(set) var dbc: SQLHDBC
+    var env: SQLHENV
+    private(set) var dbc: SQLHDBC = CLI.nullHandle
     private var inTransaction = false
     private var statements: [WeakStatement] = []
 
@@ -52,15 +52,12 @@ public final class Connection {
         env = try allocEnv()
         do {
             dbc = try allocDbc(env)
-        } catch {
-            try? freeHandle(CLI.handleEnv, env)
-            throw error
-        }
-        do {
             try connect(dbc, name)
         } catch {
+            // dbc is set when it was allocated.
             try? freeHandle(CLI.handleDbc, dbc)
             try? freeHandle(CLI.handleEnv, env)
+            dbc = CLI.nullHandle
             throw error
         }
 

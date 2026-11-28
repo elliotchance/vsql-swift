@@ -18,13 +18,8 @@ public enum VSQLLibrary {
     /// How libvsql was built.
     public static var buildInfo: BuildInfo { loaded.build }
 
-    private static let loaded: (version: String, number: Int, build: BuildInfo) = {
-        do {
-            return try load()
-        } catch {
-            fatalError("can't read the version of libvsql: \(error)")
-        }
-    }()
+    // An in-memory database can always be opened.
+    private static let loaded = try! load()
 
     private static func load() throws -> (version: String, number: Int, build: BuildInfo) {
         let db = try Connection()
