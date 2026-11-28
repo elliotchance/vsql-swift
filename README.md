@@ -189,9 +189,22 @@ the same file share a lock.
 
 ## Requirements
 
-Swift 6.0 or later, on macOS 13 or later (ARM64 and x86-64), Linux (ARM64 and
-x86-64) or Windows (x86-64). iOS and the other Apple platforms aren't
-supported yet. The first build compiles libvsql, which takes about 15 seconds
+Swift 6.0 or later, on macOS 13 or later (ARM64 and x86-64), iOS 16 or later,
+Linux (ARM64 and x86-64) or Windows (x86-64). The other Apple platforms
+(tvOS, watchOS and visionOS) aren't supported yet.
+
+On iOS, a database file has to be in the app's container, such as:
+
+```swift
+let folder = try FileManager.default.url(
+    for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+let db = try Connection(url: folder.appendingPathComponent("app.vsql"))
+```
+
+A path can't be longer than 128 bytes, which is enough on a device, but not in
+the iOS Simulator, where the app's container is in a much longer folder.
+
+The first build compiles libvsql, which takes about 15 seconds
 (or a couple of minutes with optimizations).
 
 ## Testing

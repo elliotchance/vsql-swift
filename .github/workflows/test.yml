@@ -42,6 +42,25 @@ jobs:
       - run: swift test -c release
       - run: swift run Example
 
+  ios:
+    name: iOS Simulator (ARM64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: xcodebuild -version
+      # The first available iPhone simulator, since the names change with
+      # each Xcode.
+      - name: Choose a simulator
+        run: |
+          id="$(xcrun simctl list devices available -j |
+            jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')"
+          echo "SIMULATOR=$id" >> "$GITHUB_ENV"
+      - run: xcodebuild test -scheme vsql-swift-Package -destination "id=$SIMULATOR"
+      # @testable needs testability in a release build.
+      - run: >-
+          xcodebuild test -scheme vsql-swift-Package -destination "id=$SIMULATOR"
+          -configuration Release ENABLE_TESTABILITY=YES
+
   windows:
     name: Windows (x86-64)
     runs-on: windows-latest
